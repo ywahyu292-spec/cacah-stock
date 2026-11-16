@@ -112,6 +112,14 @@ main{flex:1;padding:14px 14px 110px}
 .sheet .sub{color:var(--mute);font-size:13px;margin-bottom:6px}
 .grip{width:40px;height:4px;border-radius:2px;background:var(--line);margin:-6px auto 12px}
 .itemhead{background:#f4f7fa;border-radius:12px;padding:12px 14px;margin:8px 0 4px}
+.itemhead .dsc{font-size:15px;font-weight:600;margin-top:4px;line-height:1.3}
+.itemhead .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.satbadge{background:var(--navy);color:#fff;font-weight:700;font-size:12.5px;padding:3px 9px;border-radius:6px}
+.satbadge:empty{display:none}
+.qprev{text-align:center;font-size:14px;color:var(--mute);margin-top:6px;min-height:19px}
+.qprev b{color:var(--navy);font-size:16px}
+.unk{background:var(--err-bg);color:var(--err);border-radius:12px;padding:14px;margin-top:10px;font-size:14px;line-height:1.45}
+.unk b{display:block;font-size:15.5px;margin-bottom:4px}
 .itemhead .k{font-size:18px;font-weight:800;letter-spacing:.3px;word-break:break-all}
 .qtyrow{display:flex;gap:8px;align-items:stretch}
 .qtyrow button{width:56px;border-radius:10px;background:#e7edf3;color:var(--navy);font-size:24px;font-weight:700}
@@ -236,27 +244,29 @@ main{flex:1;padding:14px 14px 110px}
     <div class="sub" id="fSub"></div>
     <div class="itemhead">
       <div class="k" id="fKode"></div>
-      <div id="fMasterTag" style="margin-top:4px"></div>
-    </div>
-    <label class="lb" for="fNama">Deskripsi Item</label>
-    <input id="fNama" class="inp" placeholder="Deskripsi item">
-
-    <label class="lb" for="fQty">Qty Fisik</label>
-    <div class="qtyrow">
-      <button type="button" id="qMin">−</button>
-      <input id="fQty" class="inp" inputmode="decimal" placeholder="0" autocomplete="off">
-      <button type="button" id="qPlus">+</button>
+      <div class="dsc" id="fNamaTxt"></div>
+      <div class="meta"><span class="satbadge" id="fSatTxt"></span><span id="fMasterTag"></span></div>
     </div>
 
-    <label class="lb" for="fSat">Satuan</label>
-    <input id="fSat" class="inp" placeholder="PCS / ROLL / KG …" autocapitalize="characters">
-    <div class="chips" id="satChips"></div>
+    <div id="fUnknown" class="hide"></div>
 
-    <label class="lb">Kondisi Barang</label>
-    <div class="chips" id="kondChips"></div>
+    <div id="fInputs">
+      <div id="satPick" class="hide">
+        <label class="lb">Satuan belum ada di master — pilih</label>
+        <div class="chips" id="satChips"></div>
+      </div>
 
-    <label class="lb" for="fKet">Keterangan (opsional)</label>
-    <input id="fKet" class="inp" placeholder="No. lot / batch / catatan">
+      <label class="lb" for="fQty">Qty Fisik</label>
+      <div class="qtyrow">
+        <button type="button" id="qMin">−</button>
+        <input id="fQty" class="inp" inputmode="decimal" placeholder="0" autocomplete="off" enterkeyhint="done">
+        <button type="button" id="qPlus">+</button>
+      </div>
+      <div class="qprev" id="qPrev"></div>
+
+      <label class="lb">Kondisi Barang</label>
+      <div class="chips" id="kondChips"></div>
+    </div>
 
     <div id="fDup"></div>
     <div id="fErr"></div>
@@ -264,6 +274,7 @@ main{flex:1;padding:14px 14px 110px}
     <div class="row2">
       <button class="btn btn-ghost" id="fCancel">Batal</button>
       <button class="btn btn-amb" id="fSave">Simpan</button>
+      <button class="btn btn-amb hide" id="fRescan">📷 Scan Ulang</button>
     </div>
     <button class="btn btn-danger btn-block hide" id="fDel" style="margin-top:8px">Hapus data ini</button>
   </div>
@@ -349,7 +360,7 @@ main{flex:1;padding:14px 14px 110px}
 
 <script>
 'use strict';
-const APP_VER='1.0.0';
+const APP_VER='1.1.0';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LS={
@@ -359,7 +370,7 @@ const LS={
 
 /* ---------- STATE ---------- */
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbz3lUTVwT4N1174oxYVOaGkE39z1PzV1cT9XAYhEeJu1VtuQ5rML2EzezXQaiBrM9Da/exec';
-const SCANNER_URL='';   // alamat versi kamera langsung (diisi setelah di-hosting)
+const SCANNER_URL='https://ywahyu292-spec.github.io/cacah-stock/';   // versi kamera langsung (GitHub Pages)
 let cfg=Object.assign({url:'',token:'',autoCam:true,autoSync:true,beep:true},LS.get('cs_cfg',{}));
 if(!cfg.url)cfg.url=DEFAULT_URL;
 let sess=LS.get('cs_sess',null);           // {user, lokasi}
@@ -402,7 +413,10 @@ function nowParts(){const d=new Date(),p=n=>String(n).padStart(2,'0');
   return{tgl:`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()}`,jam:`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,ts:d.getTime()}}
 const fmtQty=n=>Number(n).toLocaleString('id-ID',{maximumFractionDigits:3});
 function parseQty(v){v=String(v||'').trim().replace(/\s/g,'');if(!v)return NaN;
-  if(v.includes(',')&&v.includes('.'))v=v.replace(/\./g,'').replace(',','.');else v=v.replace(',','.');return Number(v)}
+  if(!/^[\d.,]+$/.test(v))return NaN;
+  if(v.includes(','))v=v.replace(/\./g,'').replace(',','.');          // 1.250,5 → 1250.5  |  2,5 → 2.5
+  else if(/^\d{1,3}(\.\d{3})+$/.test(v))v=v.replace(/\./g,'');       // 5.000 → 5000 (titik = ribuan)
+  return Number(v)}
 
 let actx=null;
 function beep(ok=true){if(!cfg.beep)return;
@@ -494,62 +508,89 @@ function parseBarcode(raw){
   else if(raw.startsWith('{')){try{const j=JSON.parse(raw);kode=j.kode||j.code||j.item||raw;nama=j.nama||j.desc||j.name||'';sat=j.satuan||j.uom||''}catch(e){}}
   kode=kode.trim();
   const m=master[kode.toUpperCase()];
-  return{kode,nama:(nama||(m&&m.n)||'').trim(),satuan:(sat||(m&&m.s)||'').trim().toUpperCase(),found:!!m,fromCode:!!nama};
+  return{kode,nama:((m&&m.n)||nama||'').trim(),satuan:((m&&m.s)||sat||'').trim().toUpperCase(),found:!!m,fromCode:!!nama};   // master selalu diutamakan
+}
+function findLokasi(code){
+  const c=String(code).trim().toUpperCase();
+  return lokasi.find(l=>{const k=l.split(' - ')[0].trim().toUpperCase();return k===c||l.toUpperCase()===c})||null;
 }
 function processCode(raw,src){
   if(!sess||anyModal())return;
   raw=String(raw||'').trim();if(!raw)return;
   lastSrc=src;
   const it=parseBarcode(raw);
+  // Barcode lokasi/rak → pindah lokasi otomatis
+  const lok=!it.found?findLokasi(it.kode):null;
+  if(lok){
+    beep(true);
+    if(lok!==sess.lokasi){sess.lokasi=lok;LS.set('cs_sess',sess);renderMain()}
+    toast('📍 Lokasi aktif: '+lok,'ok');
+    if(src==='kamera'&&qr){camLock=false;setTimeout(()=>{try{qr.resume()}catch(e){}if(!anyModal())openMd('mdCam')},900)}
+    return;
+  }
   beep(it.found||it.fromCode);
   openForm(it,null);
 }
 
 /* ---------- FORM ---------- */
+let satSel='';
 function openForm(it,rec){
   curItem=it;editId=rec?rec.id:null;
+  const ok=it.found||(it.fromCode&&it.nama)||!!rec;          // data berasal dari master / label resmi
   $('#fTitle').textContent=rec?'Edit Hasil Pencacahan':'Input Hasil Pencacahan';
   $('#fSub').textContent=`${sess.user} · ${rec?rec.lokasi:sess.lokasi}`;
   $('#fKode').textContent=it.kode;
-  $('#fMasterTag').innerHTML=it.found?'<span class="badge b-ok" style="margin:0">Terdaftar di master item</span>'
-    :(it.fromCode?'<span class="badge b-ok" style="margin:0">Data dari barcode</span>':'<span class="badge b-pend" style="margin:0">Tidak ada di master — isi deskripsi manual</span>');
-  $('#fNama').value=it.nama||'';
+  $('#fNamaTxt').textContent=ok?(rec?rec.nama:it.nama):'';
+  satSel=rec?rec.satuan:(it.satuan||'');
+  $('#fSatTxt').textContent=satSel;
+  $('#fMasterTag').innerHTML=ok?'<span class="badge b-ok" style="margin:0">✓ Data dari master item</span>':'';
+  $('#fUnknown').classList.toggle('hide',ok);
+  $('#fUnknown').innerHTML=ok?'':`<div class="unk"><b>✕ Kode tidak terdaftar di MASTER_ITEM</b>Data tidak bisa disimpan agar tidak ada salah tulis. Pastikan barcode yang di-scan adalah label item, atau tambahkan kode ini ke sheet MASTER_ITEM lalu buka ulang aplikasi.</div>`;
+  $('#fInputs').classList.toggle('hide',!ok);
+  $('#fSave').classList.toggle('hide',!ok);
+  $('#fRescan').classList.toggle('hide',ok||lastSrc!=='kamera');
+  $('#satPick').classList.toggle('hide',!(ok&&!satSel));     // pilih satuan hanya bila master kosong
   $('#fQty').value=rec?String(rec.qty).replace('.',','):'';
-  $('#fSat').value=rec?rec.satuan:(it.satuan||'');
-  $('#fKet').value=rec?rec.ket||'':'';
   kond=rec?rec.kondisi||'Baik':'Baik';
-  renderChips();
+  renderChips();updPrev();
   $('#fErr').innerHTML='';
   $('#fDel').classList.toggle('hide',!rec);
   $('#fSave').textContent=rec?'Simpan Perubahan':'Simpan';
   // duplikat di lokasi yg sama
   const lok=rec?rec.lokasi:sess.lokasi;
-  const dups=recs.filter(r=>r.lokasi===lok&&r.kode.toUpperCase()===it.kode.toUpperCase()&&r.id!==editId);
+  const dups=ok?recs.filter(r=>r.lokasi===lok&&r.kode.toUpperCase()===it.kode.toUpperCase()&&r.id!==editId):[];
   if(dups.length){const tot=dups.reduce((a,r)=>a+Number(r.qty),0);
     $('#fDup').innerHTML=`<div class="alert al-warn">⚠ Item ini sudah dicacah <b>${dups.length}x</b> di lokasi ini (total <b>${fmtQty(tot)} ${esc(dups[0].satuan)}</b>). ${rec?'':'Data baru akan disimpan sebagai baris tambahan (mis. tumpukan/rak berbeda).'}</div>`}
   else $('#fDup').innerHTML='';
+  if(!ok)beep(false);
   openMd('mdForm');
-  setTimeout(()=>{const f=it.nama?$('#fQty'):$('#fNama');f.focus();f.select&&f.select()},180);
+  if(ok)setTimeout(()=>{$('#fQty').focus();$('#fQty').select()},180);
 }
 function renderChips(){
-  const s=$('#fSat').value.trim().toUpperCase();
-  $('#satChips').innerHTML=SATUAN.map(x=>`<button type="button" class="chip ${x===s?'on':''}" data-s="${x}">${x}</button>`).join('');
+  $('#satChips').innerHTML=SATUAN.map(x=>`<button type="button" class="chip ${x===satSel?'on':''}" data-s="${x}">${x}</button>`).join('');
   $('#kondChips').innerHTML=KONDISI.map(x=>`<button type="button" class="chip ${x===kond?'on':''}" data-k="${x}">${x}</button>`).join('');
 }
-$('#satChips').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;$('#fSat').value=b.dataset.s;renderChips()};
+function updPrev(){
+  const raw=$('#fQty').value.trim(),q=parseQty(raw);
+  $('#qPrev').innerHTML=!raw?'':(isNaN(q)?'<span style="color:var(--err)">Format angka tidak valid</span>':`= <b>${fmtQty(q)}</b> ${esc(satSel)}`);
+}
+$('#satChips').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;satSel=b.dataset.s;$('#fSatTxt').textContent=satSel;renderChips();updPrev()};
 $('#kondChips').onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;kond=b.dataset.k;renderChips()};
-$('#fSat').oninput=renderChips;
-$('#qPlus').onclick=()=>{const v=parseQty($('#fQty').value);$('#fQty').value=String((isNaN(v)?0:v)+1).replace('.',',')};
-$('#qMin').onclick=()=>{const v=parseQty($('#fQty').value);$('#fQty').value=String(Math.max(0,(isNaN(v)?0:v)-1)).replace('.',',')};
-$('#fQty').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#fSat').value?$('#fSave').click():$('#fSat').focus()}});
+$('#fQty').addEventListener('input',()=>{const v=$('#fQty').value,c=v.replace(/[^\d.,]/g,'');if(c!==v)$('#fQty').value=c;updPrev()});
+$('#qPlus').onclick=()=>{const v=parseQty($('#fQty').value);$('#fQty').value=String((isNaN(v)?0:v)+1).replace('.',',');updPrev()};
+$('#qMin').onclick=()=>{const v=parseQty($('#fQty').value);$('#fQty').value=String(Math.max(0,(isNaN(v)?0:v)-1)).replace('.',',');updPrev()};
+$('#fQty').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#fSave').click()}});
 $('#fCancel').onclick=()=>{closeMd('mdForm');if(lastSrc==='kamera'&&qr&&!editId)setTimeout(resumeCamera,200);else afterFormClose()};
+$('#fRescan').onclick=()=>{closeMd('mdForm');setTimeout(resumeCamera,150)};
 
 $('#fSave').onclick=()=>{
-  const nama=$('#fNama').value.trim(), qty=parseQty($('#fQty').value), sat=$('#fSat').value.trim().toUpperCase(), ket=$('#fKet').value.trim();
+  const rec0=editId?recs.find(x=>x.id===editId):null;
+  const nama=rec0?rec0.nama:curItem.nama, qty=parseQty($('#fQty').value), sat=satSel, ket=rec0?rec0.ket||'':'';
   const errs=[];
-  if(!nama)errs.push('Deskripsi item wajib diisi');
-  if(isNaN(qty)||qty<0)errs.push('Qty harus angka ≥ 0');
-  if(!sat)errs.push('Satuan wajib diisi');
+  if(!nama)errs.push('Kode tidak terdaftar di master item');
+  if($('#fQty').value.trim()==='')errs.push('Isi qty fisik dulu');
+  else if(isNaN(qty)||qty<0)errs.push('Qty harus angka ≥ 0');
+  if(!sat)errs.push('Pilih satuan');
   if(errs.length){$('#fErr').innerHTML=`<div class="alert al-err">${errs.join('<br>')}</div>`;beep(false);return}
   if(qty>999999&&!confirm(`Qty ${fmtQty(qty)} sangat besar. Yakin benar?`))return;
   if(editId){
